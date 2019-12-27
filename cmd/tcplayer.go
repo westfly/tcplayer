@@ -63,7 +63,12 @@ func handleSource(ctx context.Context, assembler *tcpassembly.Assembler, pktSour
 		case <-ctx.Done():
 			log.Infof("stop capturing from source")
 			return
-		case packet := <-pktSource.Packets():
+		case packet, ok := <-pktSource.Packets():
+			if !ok {
+				// If the channel was closed return.
+				log.Infof("stop capturing from source")
+				return
+			}
 			if tcpLayer := packet.Layer(layers.LayerTypeTCP); tcpLayer != nil {
 				totalCnt++
 				now := time.Now()
@@ -133,21 +138,22 @@ func main() {
 		assembler  = tcpassembly.NewAssembler(streamPool)
 	)
 	assembler.MaxBufferedPagesPerConnection = 6
-	// live source using libpcap
-	lsc := &source.LiveSourceConfig{
-		Dev:     *dev,
-		Caplen:  int32(*caplen),
-		Bpf:     *bpf,
-		Promisc: *promisc,
-	}
-	if s, err := source.NewLiveSource(lsc); err != nil {
-		log.Errorf("create live source failed: %v", err)
-		return
+	if *file == "" {
+		// live source using libpcap
+		lsc := &source.LiveSourceConfig{
+			Dev:     *dev,
+			Caplen:  int32(*caplen),
+			Bpf:     *bpf,
+			Promisc: *promisc,
+		}
+		if s, err := source.NewLiveSource(lsc); err != nil {
+			log.Errorf("create live source failed: %v", err)
+			return
+		} else {
+			go handleSource(ctx, assembler, s)
+		}
 	} else {
-		go handleSource(ctx, assembler, s)
-	}
-	// offline source using pcap file
-	if *file != "" {
+		// offline source using pcap file
 		osc := &source.OfflineSourceConfig{
 			FilePath: *file,
 			Bpf:      *bpf,
