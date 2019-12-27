@@ -17,10 +17,9 @@ package deliver
 import (
 	"context"
 	"fmt"
+	log "github.com/sirupsen/logrus"
 	"math/rand"
 	"time"
-
-	log "github.com/sirupsen/logrus"
 )
 
 type ModeType int
@@ -112,7 +111,14 @@ func (d *Deliver) Run() error {
 		return fmt.Errorf("deliver stopped by context done")
 	}
 }
-
+func (d *Deliver) GetRandomSender() (Sender, error) {
+	len := len(d.Clients)
+	if len == 0 {
+		return nil, fmt.Errorf("empty client, pls check")
+	}
+	idx := rand.Int() % len
+	return d.Clients[idx].S, nil
+}
 func NewDeliver(ctx context.Context, config *DeliverConfig) (*Deliver, error) {
 	if len(config.RemoteAddr) == 0 {
 		err := fmt.Errorf("deliver config not set RemoteAddrs")

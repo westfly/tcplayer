@@ -43,9 +43,9 @@ func (f *ThriftStreamFactory) New(l, r gopacket.Flow) tcpassembly.Stream {
 }
 
 func (f *ThriftStreamFactory) handleThriftStream(r io.Reader) {
-	ctx, cancel := context.WithCancel(f.d.Ctx)
+	_, cancel := context.WithCancel(f.d.Ctx)
 	defer cancel()
-	sender, err := deliver.NewLongConnSender(ctx, f.d.Config.Clone+1, f.d.Config.RemoteAddr)
+	sender, err := f.d.GetRandomSender()
 	if err != nil {
 		log.Errorf("thriftStreamFactory create sender error: %v", err)
 		return

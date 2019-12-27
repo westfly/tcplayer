@@ -20,6 +20,9 @@ package deliver
 import (
 	"context"
 	"fmt"
+	"net"
+
+	log "github.com/sirupsen/logrus"
 )
 
 type ClientConfig struct {
@@ -43,6 +46,12 @@ func NewClient(ctx context.Context, c *ClientConfig) (*Client, error) {
 	)
 	if !c.IsLong {
 		creator = NewShortConnSender
+	}
+	host, _, _ := net.SplitHostPort(c.RemoteAddr)
+	remote_model := net.ParseIP(host).To4()
+	if remote_model == nil {
+		log.Errorf("parse remote %s failed will use localfile_model", c.RemoteAddr)
+		creator = NewLocalFileWriter
 	}
 	s, err := creator(ctx, 1, c.RemoteAddr)
 	if err != nil {

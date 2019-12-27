@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"os"
 	"time"
 
 	log "github.com/sirupsen/logrus"
@@ -211,6 +212,74 @@ func NewShortConnSender(ctx context.Context, n int, addr string) (Sender, error)
 		Stat:       &Stat{},
 	}
 
+	go s.run()
+	return s, nil
+}
+
+type LocalFileWriter struct {
+	FilePrefix string
+	ConnNum    int
+	FileList   []*os.File
+	Ctx        context.Context
+	C          chan []byte
+	Stat       *Stat
+}
+
+func (s *LocalFileWriter) writeOne(req []byte, idx int) {
+	file := s.FileList[idx]
+	if _, err := file.Write(req); err != nil {
+		log.Errorf("write one to file % v %v failed: %v", idx, file, err)
+	}
+}
+func (s *LocalFileWriter) run() {
+	defer s.destroy()
+	for {
+		select {
+		case <-s.Ctx.Done():
+			return
+		case req := <-s.C:
+			s.Stat.TotalRequest++
+			now := time.Now()
+			if now.After(s.Stat.LastStatTime.Add(time.Second * 1)) {
+				s.Stat.RequestPerSecond = s.Stat.TotalRequest - s.Stat.LastTotalRequest
+				log.Infof("remote %s total reqs %d, %d reqs/s", s.FilePrefix, s.Stat.TotalRequest, s.Stat.RequestPerSecond)
+				s.Stat.LastTotalRequest = s.Stat.TotalRequest
+				s.Stat.LastStatTime = now
+			}
+			for i := 0; i < s.ConnNum; i++ {
+				go s.writeOne(req, i)
+			}
+		}
+	}
+}
+func (s *LocalFileWriter) destroy() {
+	for i := 0; i < s.ConnNum; i++ {
+		s.FileList[i].Close()
+	}
+}
+
+func (s *LocalFileWriter) Data() chan []byte {
+	return s.C
+}
+
+func NewLocalFileWriter(ctx context.Context, n int, addr string) (Sender, error) {
+	s := &LocalFileWriter{
+		FilePrefix: addr,
+		ConnNum:    n,
+		Ctx:        ctx,
+		C:          make(chan []byte),
+		Stat:       &Stat{},
+	}
+	for i := 0; i < n; i++ {
+		fileName := fmt.Sprintf("%v.%v.dat", addr, i)
+		fd, err := os.OpenFile(fileName, os.O_RDWR|os.O_CREATE, 0644)
+		if err != nil {
+			err = fmt.Errorf("open %s failed: %v", fileName, err)
+			s.destroy()
+			return nil, err
+		}
+		s.FileList = append(s.FileList, fd)
+	}
 	go s.run()
 	return s, nil
 }
